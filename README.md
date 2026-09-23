@@ -4,7 +4,7 @@
 [![GitHub Release](https://img.shields.io/github/v/release/MANCrimSon/sing-box-extended-lite?style=flat&color=3388ff)](https://github.com/MANCrimSon/sing-box-extended-lite/releases/latest)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 
-Lightweight, bloat-free OpenWrt builds of [shtorm-7/sing-box-extended](https://github.com/shtorm-7/sing-box-extended). Tailored specifically for home routers running Podkop, Zero-Block, or custom transparent proxies.
+Lightweight, bloat-free OpenWrt builds of [shtorm-7/sing-box-extended](https://github.com/shtorm-7/sing-box-extended), automatically updated and compiled with every new upstream release. Tailored specifically for home routers running Podkop, Zero-Block, or custom transparent proxies.
 
 ---
 
@@ -108,15 +108,6 @@ Standard upstream compiles heavy enterprise/desktop services into a single monol
 > 💬 **Don't see your router model or architecture?**  
 > If you would like to see your device added to the list or need support for another CPU target, feel free to request it in [Issues](https://github.com/MANCrimSon/sing-box-extended-lite/issues)!
 
-
----
-
-## 🤖 Automated Upstream Tracking
-
-The GitHub Actions workflow runs every night at **03:00 UTC** via cron:
-1. Checks for new releases in [shtorm-7/sing-box-extended](https://github.com/shtorm-7/sing-box-extended).
-2. Automatically compiles native Lite builds across all 5 architectures in both uncompressed and UPX-compressed formats.
-3. Generates SHA256 checksums and publishes a new release tagged identically to upstream.
 
 ---
 
