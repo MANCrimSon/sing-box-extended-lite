@@ -203,8 +203,8 @@ jobs:
 
           cat >> release_notes.md << 'EOF'
           ### 📦 Dual Package Highlights
-          - **UPX Lite (~9.5–12.5 MB)**: UPX-compressed for small flash routers (saves ~8–11 MB flash vs upstream).
-          - **Pure ELF (~46 MB)**: Pure uncompressed binary for routers with ample flash/x86. Zero decompression overhead.
+          - **Standard Variant (~46 MB ELF)**: Pure uncompressed binary for routers with ample flash/x86. Zero decompression overhead.
+          - **Compressed Variant (~9.5–12.5 MB)**: UPX-compressed for small flash routers (saves ~8–11 MB flash vs upstream).
 
           ### ⚡ Quick 1-Command Install / Update (OpenWrt)
           ```sh

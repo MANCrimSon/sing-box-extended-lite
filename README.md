@@ -25,11 +25,11 @@ The script automatically detects CPU architecture and flash capacity. If availab
 
 ### Manual Overrides:
 ```sh
-# Force compressed UPX Lite build (~9.5–12.5 MB)
-sh <(curl -fsSL https://raw.githubusercontent.com/MANCrimSon/sing-box-extended-lite/main/install.sh) --compressed
-
 # Force uncompressed Pure ELF build (~46 MB)
 sh <(curl -fsSL https://raw.githubusercontent.com/MANCrimSon/sing-box-extended-lite/main/install.sh) --normal
+
+# Force compressed UPX Lite build (~9.5–12.5 MB)
+sh <(curl -fsSL https://raw.githubusercontent.com/MANCrimSon/sing-box-extended-lite/main/install.sh) --compressed
 
 # Install specific version
 sh <(curl -fsSL https://raw.githubusercontent.com/MANCrimSon/sing-box-extended-lite/main/install.sh) v1.14.1-extended-2.7.2
