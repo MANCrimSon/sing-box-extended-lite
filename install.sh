@@ -442,6 +442,10 @@ else
     DOWNLOAD_URL="https://github.com/${REPO}/releases/latest/download/${FILE_NAME}"
 fi
 
+# Free page cache and buffer memory to maximize RAM headroom for download and unpacking
+sync
+echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true
+
 # Check free space in /tmp (65 MB for normal, 25 MB for compressed)
 REQ_TMP_KB=65000
 [ "$WANT_COMPRESSED" = "1" ] && REQ_TMP_KB=25000
@@ -596,10 +600,44 @@ restart_services
 INSTALL_SUCCESS=1
 cleanup
 rm -f "$BACKUP_BIN" "$BACKUP_REAL" "$BACKUP_CACHE"
+sync
+
+# Health-check daemon state after service restart
+SERVICE_STATUS=""
+SERVICE_STATUS_COLOR="$NC"
+PID_CHECK=$(pidof sing-box sing-box-core 2>/dev/null || pidof sing-box 2>/dev/null || pidof sing-box-core 2>/dev/null || true)
+PID_CHECK=$(printf "%s" "$PID_CHECK" | tr -s ' ' | sed 's/^ //;s/ $//')
+
+if [ "$WAS_SERVICE_RUNNING" = "1" ] || [ "$WAS_ZB_RUNNING" = "1" ]; then
+    if [ -n "$PID_CHECK" ]; then
+        SERVICE_STATUS="Running (PID: ${PID_CHECK})"
+        SERVICE_STATUS_COLOR="$GREEN"
+    else
+        SERVICE_STATUS="Warning: stopped or failed to start (check 'logread -e sing-box')"
+        SERVICE_STATUS_COLOR="$YELLOW"
+    fi
+elif [ -n "$SERVICE_NAME" ] || [ -n "$ZB_SERVICE" ]; then
+    if [ -n "$PID_CHECK" ]; then
+        SERVICE_STATUS="Running (PID: ${PID_CHECK})"
+        SERVICE_STATUS_COLOR="$GREEN"
+    else
+        SERVICE_STATUS="Inactive (service was stopped before install)"
+        SERVICE_STATUS_COLOR="$NC"
+    fi
+else
+    if [ -n "$PID_CHECK" ]; then
+        SERVICE_STATUS="Running (PID: ${PID_CHECK})"
+        SERVICE_STATUS_COLOR="$GREEN"
+    else
+        SERVICE_STATUS="Standalone binary (no service configured)"
+        SERVICE_STATUS_COLOR="$NC"
+    fi
+fi
 
 printf "\n${GREEN}[+] Installation Successful!${NC}\n"
-printf "  Version:       ${YELLOW}%s${NC} -> ${GREEN}%s${NC}\n" "${CURRENT_VER:-n/a}" "$NEW_VER"
-printf "  Binary Size:   ${GREEN}%s${NC} (%s)\n" "${BIN_SIZE_MB:-n/a}" "$VARIANT_LABEL"
-printf "  Free Flash:    ${GREEN}%s${NC}\n" "$FLASH_FREE_DISP"
-printf "  Free RAM:      ${GREEN}%s${NC}\n" "$RAM_FREE_DISP"
+printf "  Version:        ${YELLOW}%s${NC} -> ${GREEN}%s${NC}\n" "${CURRENT_VER:-n/a}" "$NEW_VER"
+printf "  Binary Size:    ${GREEN}%s${NC} (%s)\n" "${BIN_SIZE_MB:-n/a}" "$VARIANT_LABEL"
+printf "  Free Flash:     ${GREEN}%s${NC}\n" "$FLASH_FREE_DISP"
+printf "  Free RAM:       ${GREEN}%s${NC}\n" "$RAM_FREE_DISP"
+printf "  Service Status: ${SERVICE_STATUS_COLOR}%s${NC}\n" "$SERVICE_STATUS"
 printf "${CYAN}====================================================${NC}\n\n"
