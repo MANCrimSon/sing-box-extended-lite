@@ -253,6 +253,10 @@ fi
 [ -z "$CURRENT_FILE_BYTES" ] && CURRENT_FILE_BYTES=0
 CURRENT_FILE_SIZE_MB=$(( CURRENT_FILE_BYTES / 1048576 ))
 
+# Flush dirty write buffers and free kernel pagecache before measuring capacity
+sync
+echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true
+
 # Detect Flash capacity and calculate effective space (using POSIX portable df -Pk)
 FLASH_AVAIL_KB=$(df -Pk / 2>/dev/null | awk 'NR==2 {print $4}' | tr -cd '0-9')
 [ -z "$FLASH_AVAIL_KB" ] && FLASH_AVAIL_KB=0
