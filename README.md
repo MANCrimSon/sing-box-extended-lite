@@ -105,6 +105,9 @@ Standard upstream compiles heavy enterprise/desktop services into a single monol
 | **`mips-softfloat`** | `mips_24kc` | **Qualcomm Atheros** (QCA9531, QCA9563, TP-Link Archer C6/C7) |
 | **`amd64`** | `x86_64` | **x86-64 Mini PCs** (Intel N100, N5105, J4125), Proxmox / ESXi / Hyper-V VMs |
 
+> 💬 **Don't see your router model or architecture?**  
+> If you would like to see your device added to the list or need support for another CPU target, feel free to request it in [Issues](https://github.com/MANCrimSon/sing-box-extended-lite/issues)!
+
 
 ---
 
