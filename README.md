@@ -39,7 +39,7 @@ sh <(curl -fsSL https://raw.githubusercontent.com/MANCrimSon/sing-box-extended-l
 
 ## ✂️ What Was Stripped vs Kept
 
-Standard upstream compiles heavy enterprise/desktop services into a single monolithic binary (>58 MB). We stripped non-router deadweight to save flash and RAM:
+Standard upstream compiles heavy enterprise/desktop services into a single monolithic binary (>95 MB). We stripped non-router deadweight to save flash and RAM:
 
 ### ✅ Kept (Router & VPN Core)
 - **VLESS Reality + XTLS Vision** (`with_utls`): Full TLS 1.3 masquerading (`gateway.icloud.com`) and ClientHello fingerprinting.
@@ -62,11 +62,11 @@ Standard upstream compiles heavy enterprise/desktop services into a single monol
 
 | Architecture | Upstream shtorm-7 | sing-box-extended-lite |
 | :--- | :--- | :--- |
-| **`arm64`** | ~58 MB (20.3 MB UPX) | **~46 MB (9.8 MB UPX)** |
-| **`amd64`** | ~65 MB (22.5 MB UPX) | **~51 MB (12.5 MB UPX)** |
-| **`mipsle-softfloat`** | ~55 MB (19.8 MB UPX) | **~44 MB (9.5 MB UPX)** |
-| **`mips-softfloat`** | ~55 MB (19.8 MB UPX) | **~44 MB (9.5 MB UPX)** |
-| **`armv7`** | ~56 MB (20.1 MB UPX) | **~45 MB (9.7 MB UPX)** |
+| **`arm64`** | ~95 MB (20.3 MB UPX) | **~45 MB (9.8 MB UPX)** |
+| **`amd64`** | ~102 MB (24.7 MB UPX) | **~48 MB (12.1 MB UPX)** |
+| **`armv7`** | ~95 MB (21.3 MB UPX) | **~44 MB (9.5 MB UPX)** |
+| **`mipsle-softfloat`** | ~96 MB (16.7 MB UPX) | **~51 MB (9.5 MB UPX)** |
+| **`mips-softfloat`** | ~96 MB (16.3 MB UPX) | **~51 MB (9.3 MB UPX)** |
 
 > 💡 *Format: Pure uncompressed ELF (UPX-compressed archive)*
 
