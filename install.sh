@@ -184,22 +184,39 @@ if [ -f "$INIT_DIR/zeroblock" ]; then
     ZB_SERVICE="zeroblock"
 fi
 
-# Detect installed variant and binary size
+# Helper to query exact file size in bytes without reading file content from flash
+get_file_size_bytes() {
+    [ ! -f "$1" ] && { echo "0"; return; }
+    if command -v stat >/dev/null 2>&1; then
+        _sz=$(stat -c %s "$1" 2>/dev/null || echo "")
+        if [ -n "$_sz" ]; then
+            echo "$_sz"
+            return
+        fi
+    fi
+    ls -ln "$1" 2>/dev/null | awk '{print $5}' | tr -cd '0-9' || echo "0"
+}
+
+# Detect installed variant and binary size using metadata only (0% CPU, 0 disk reads)
 INSTALLED_VARIANT=""
 CURRENT_FILE_BYTES=0
 
 if [ -f "$REAL_BIN" ]; then
     INSTALLED_VARIANT="compressed"
-    CURRENT_FILE_BYTES=$(wc -c < "$REAL_BIN" 2>/dev/null | tr -cd '0-9')
-elif [ -f "$VERSION_CACHE" ]; then
-    INSTALLED_VARIANT="compressed"
+    CURRENT_FILE_BYTES=$(get_file_size_bytes "$REAL_BIN")
 elif [ -f "$DEST_BIN" ]; then
-    if grep -q "sing-box-core" "$DEST_BIN" 2>/dev/null; then
+    DEST_SZ=$(get_file_size_bytes "$DEST_BIN")
+    # Shell wrapper scripts for UPX are tiny text files (< 10000 bytes)
+    if [ "$DEST_SZ" -lt 10000 ]; then
         INSTALLED_VARIANT="compressed"
+        CURRENT_FILE_BYTES=$(get_file_size_bytes "$REAL_BIN")
+        [ "$CURRENT_FILE_BYTES" = "0" ] && CURRENT_FILE_BYTES="$DEST_SZ"
     else
         INSTALLED_VARIANT="normal"
-        CURRENT_FILE_BYTES=$(wc -c < "$DEST_BIN" 2>/dev/null | tr -cd '0-9')
+        CURRENT_FILE_BYTES="$DEST_SZ"
     fi
+elif [ -f "$VERSION_CACHE" ]; then
+    INSTALLED_VARIANT="compressed"
 fi
 
 CURRENT_VER=""
@@ -208,14 +225,18 @@ if [ -s "$VERSION_CACHE" ]; then
 fi
 if [ -z "$CURRENT_VER" ] && [ -x "$DEST_BIN" ]; then
     CURRENT_VER=$("$DEST_BIN" version 2>/dev/null | head -n 1 | awk '{print $NF}' || echo "")
+    if [ -n "$CURRENT_VER" ]; then
+        "$DEST_BIN" version > "$VERSION_CACHE" 2>/dev/null || true
+        chmod 644 "$VERSION_CACHE" 2>/dev/null || true
+    fi
 fi
 
 # Detect running unlinked process holding deleted file in memory
 if [ "$CURRENT_FILE_BYTES" = "0" ]; then
     RUNNING_PID=$(pidof sing-box 2>/dev/null | awk '{print $1}')
     [ -z "$RUNNING_PID" ] && RUNNING_PID=$(pidof sing-box-core 2>/dev/null | awk '{print $1}')
-    if [ -n "$RUNNING_PID" ] && [ -r "/proc/$RUNNING_PID/exe" ]; then
-        CURRENT_FILE_BYTES=$(wc -c < "/proc/$RUNNING_PID/exe" 2>/dev/null | tr -cd '0-9')
+    if [ -n "$RUNNING_PID" ] && [ -d "/proc/$RUNNING_PID" ]; then
+        CURRENT_FILE_BYTES=$(get_file_size_bytes "/proc/$RUNNING_PID/exe")
         if [ -z "$INSTALLED_VARIANT" ]; then
             if pidof sing-box-core >/dev/null 2>&1; then
                 INSTALLED_VARIANT="compressed"
@@ -553,7 +574,10 @@ else
 
     DEST_BIN_TOUCHED=1
     mv -f "$STAGE_BIN" "$DEST_BIN"
-    rm -f "$REAL_BIN" "$VERSION_CACHE"
+    CACHE_TOUCHED=1
+    printf "%s\n" "$VALIDATION_BANNER" > "$VERSION_CACHE"
+    chmod 644 "$VERSION_CACHE" 2>/dev/null || true
+    rm -f "$REAL_BIN"
 fi
 
 NEW_BANNER=$(echo "$VALIDATION_BANNER" | head -n 1)
