@@ -60,15 +60,15 @@ Standard upstream compiles heavy enterprise/desktop services into a single monol
 
 ## 📊 Size Comparison
 
-| Architecture | Upstream shtorm-7 | Pure ELF (Uncompressed) | UPX Lite (Compressed) | Flash Savings (UPX vs Upstream) |
-| :--- | :--- | :--- | :--- | :--- |
-| **`arm64`** | ~58 MB (20.3 MB UPX) | **46.0 MB** | **9.8 MB** | **-52% (-10.5 MB flash)** |
-| **`amd64`** | ~65 MB (22.5 MB UPX) | **51.0 MB** | **12.5 MB** | **-44% (-10.0 MB flash)** |
-| **`mipsle-softfloat`**| ~55 MB (19.8 MB UPX) | **44.0 MB** | **9.5 MB** | **-52% (-10.3 MB flash)** |
-| **`mips-softfloat`**  | ~55 MB (19.8 MB UPX) | **44.0 MB** | **9.5 MB** | **-52% (-10.3 MB flash)** |
-| **`armv7`**           | ~56 MB (20.1 MB UPX) | **45.0 MB** | **9.7 MB** | **-52% (-10.4 MB flash)** |
+| Architecture | Upstream shtorm-7 | sing-box-extended-lite |
+| :--- | :--- | :--- |
+| **`arm64`** | ~58 MB (20.3 MB UPX) | **~46 MB (9.8 MB UPX)** |
+| **`amd64`** | ~65 MB (22.5 MB UPX) | **~51 MB (12.5 MB UPX)** |
+| **`mipsle-softfloat`** | ~55 MB (19.8 MB UPX) | **~44 MB (9.5 MB UPX)** |
+| **`mips-softfloat`** | ~55 MB (19.8 MB UPX) | **~44 MB (9.5 MB UPX)** |
+| **`armv7`** | ~56 MB (20.1 MB UPX) | **~45 MB (9.7 MB UPX)** |
 
-> *Note: Router architectures achieve ultra-compact ~9.5–10 MB flash footprints, while x86_64 (amd64) packages at ~12.5 MB.*
+> 💡 *Format: Pure uncompressed ELF (UPX-compressed archive)*
 
 ---
 
