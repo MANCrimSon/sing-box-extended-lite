@@ -202,9 +202,6 @@ elif [ -f "$DEST_BIN" ]; then
     fi
 fi
 
-[ -z "$CURRENT_FILE_BYTES" ] && CURRENT_FILE_BYTES=0
-CURRENT_FILE_SIZE_MB=$(( CURRENT_FILE_BYTES / 1048576 ))
-
 CURRENT_VER=""
 if [ -s "$VERSION_CACHE" ]; then
     CURRENT_VER=$(head -n 1 "$VERSION_CACHE" 2>/dev/null | awk '{print $NF}' || echo "")
@@ -212,6 +209,28 @@ fi
 if [ -z "$CURRENT_VER" ] && [ -x "$DEST_BIN" ]; then
     CURRENT_VER=$("$DEST_BIN" version 2>/dev/null | head -n 1 | awk '{print $NF}' || echo "")
 fi
+
+# Detect running unlinked process holding deleted file in memory
+if [ "$CURRENT_FILE_BYTES" = "0" ]; then
+    RUNNING_PID=$(pidof sing-box 2>/dev/null | awk '{print $1}')
+    [ -z "$RUNNING_PID" ] && RUNNING_PID=$(pidof sing-box-core 2>/dev/null | awk '{print $1}')
+    if [ -n "$RUNNING_PID" ] && [ -r "/proc/$RUNNING_PID/exe" ]; then
+        CURRENT_FILE_BYTES=$(wc -c < "/proc/$RUNNING_PID/exe" 2>/dev/null | tr -cd '0-9')
+        if [ -z "$INSTALLED_VARIANT" ]; then
+            if pidof sing-box-core >/dev/null 2>&1; then
+                INSTALLED_VARIANT="compressed"
+            else
+                INSTALLED_VARIANT="normal"
+            fi
+        fi
+        if [ -z "$CURRENT_VER" ]; then
+            CURRENT_VER=$("/proc/$RUNNING_PID/exe" version 2>/dev/null | head -n 1 | awk '{print $NF}' || echo "")
+        fi
+    fi
+fi
+
+[ -z "$CURRENT_FILE_BYTES" ] && CURRENT_FILE_BYTES=0
+CURRENT_FILE_SIZE_MB=$(( CURRENT_FILE_BYTES / 1048576 ))
 
 # Detect Flash capacity and calculate effective space (using POSIX portable df -Pk)
 FLASH_AVAIL_KB=$(df -Pk / 2>/dev/null | awk 'NR==2 {print $4}' | tr -cd '0-9')
