@@ -1,0 +1,16 @@
+# Binaries and archives
+*.tar.gz
+*.zip
+sing-box
+*.exe
+
+# Temporary files
+/tmp/
+dist/
+build/
+
+# OS / Editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
