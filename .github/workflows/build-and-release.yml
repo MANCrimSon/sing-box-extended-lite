@@ -187,10 +187,8 @@ jobs:
           UPSTREAM_TAG="${{ needs.check.outputs.tag }}"
           UPSTREAM_REPO="shtorm-7/sing-box-extended"
 
-          cat > release_notes.md << EOF
-          ## sing-box-extended-lite ${UPSTREAM_TAG}
-
-          Lightweight, bloat-free OpenWrt router builds of [shtorm-7/sing-box-extended](https://github.com/shtorm-7/sing-box-extended) (${UPSTREAM_TAG}).
+          cat > release_notes.md << 'EOF'
+          Lightweight, bloat-free OpenWrt builds based on [shtorm-7/sing-box-extended](https://github.com/shtorm-7/sing-box-extended).
 
           EOF
 
@@ -199,7 +197,7 @@ jobs:
             "https://api.github.com/repos/${UPSTREAM_REPO}/releases/tags/${UPSTREAM_TAG}" 2>/dev/null | jq -r '.body // empty' || true)
 
           if [ -n "$UPSTREAM_BODY" ] && [ "$UPSTREAM_BODY" != "null" ]; then
-            printf "### 📝 Upstream Release Notes (%s)\n\n" "$UPSTREAM_TAG" >> release_notes.md
+            printf "### 📝 Upstream Release Notes\n\n" >> release_notes.md
             printf "%s\n\n" "$UPSTREAM_BODY" >> release_notes.md
           fi
 
