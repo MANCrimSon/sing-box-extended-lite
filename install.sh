@@ -311,11 +311,11 @@ if [ "$CLI_EXPLICIT" = "0" ]; then
     if [ "$IS_TTY" = "1" ]; then
         printf "\nSelect installation variant:\n"
         if [ "$DEFAULT_CHOICE" = "1" ]; then
-            printf "  ${GREEN}1) Normal (Pure ELF ~46MB) - нулевой оверхед по RAM (рекомендуется при Flash >= 55MB) [*]${NC}\n"
-            printf "  2) Compressed (UPX Lite ~10MB) - экономия Flash (для роутеров с 16-32MB памяти)\n"
+            printf "  ${GREEN}1) Normal (Pure ELF ~46MB)     - Zero RAM overhead (recommended for Flash >= 55MB) [*]${NC}\n"
+            printf "  2) Compressed (UPX Lite ~10MB) - Saves ~35MB Flash (for routers with 16-32MB flash)\n"
         else
-            printf "  1) Normal (Pure ELF ~46MB) - нулевой оверхед по RAM (рекомендуется при Flash >= 55MB)\n"
-            printf "  ${GREEN}2) Compressed (UPX Lite ~10MB) - экономия Flash (для роутеров с 16-32MB памяти) [*]${NC}\n"
+            printf "  1) Normal (Pure ELF ~46MB)     - Zero RAM overhead (recommended for Flash >= 55MB)\n"
+            printf "  ${GREEN}2) Compressed (UPX Lite ~10MB) - Saves ~35MB Flash (for routers with 16-32MB flash) [*]${NC}\n"
         fi
         printf "Choice [1-2, default: %s]: " "$DEFAULT_CHOICE"
 
@@ -362,7 +362,7 @@ if [ "$WANT_COMPRESSED" = "0" ] && [ "$FLASH_EFFECTIVE_MB" -lt 50 ]; then
 fi
 
 VARIANT_LABEL="Normal (Uncompressed ~46MB)"
-[ "$WANT_COMPRESSED" = "1" ] && VARIANT_LABEL="Compressed (UPX Lite ~9.5–12.5MB)"
+[ "$WANT_COMPRESSED" = "1" ] && VARIANT_LABEL="Compressed (UPX Lite ~9.5-12.5MB)"
 
 printf "  Variant:         ${YELLOW}%s${NC}\n" "$VARIANT_LABEL"
 printf "  Active Target:   ${YELLOW}%s${NC}\n\n" "${SERVICE_NAME:-manual/none}"
