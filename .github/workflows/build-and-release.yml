@@ -1,0 +1,209 @@
+name: Build and Release Lite
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: 'Force build even if release exists'
+        required: false
+        type: boolean
+        default: false
+      custom_tag:
+        description: 'Specific upstream tag to build (e.g. v1.14.1-extended-2.7.2). Leave blank for latest.'
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  check:
+    name: Check New Upstream Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      should_build: ${{ steps.check_step.outputs.should_build }}
+      tag: ${{ steps.check_step.outputs.tag }}
+      version: ${{ steps.check_step.outputs.version }}
+    steps:
+      - name: Query Releases
+        id: check_step
+        run: |
+          set -e
+          UPSTREAM_REPO="shtorm-7/sing-box-extended"
+          LATEST_UPSTREAM_TAG=$(curl -fsSL -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${UPSTREAM_REPO}/releases/latest" | jq -r '.tag_name // empty')
+          
+          if [ -z "$LATEST_UPSTREAM_TAG" ]; then
+            echo "Error: Failed to fetch latest upstream tag" >&2
+            exit 1
+          fi
+
+          CUSTOM_TAG="${{ github.event.inputs.custom_tag }}"
+          if [ -n "$CUSTOM_TAG" ]; then
+            TARGET_TAG="$CUSTOM_TAG"
+            echo "Using custom requested tag: $TARGET_TAG"
+          else
+            TARGET_TAG="$LATEST_UPSTREAM_TAG"
+            echo "Latest upstream release tag: $TARGET_TAG"
+          fi
+
+          FORCE="${{ github.event.inputs.force_build }}"
+          
+          # Check if this tag already exists in current repo
+          TAG_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${{ github.repository }}/releases/tags/${TARGET_TAG}" || true)
+
+          echo "Local release check for $TARGET_TAG: HTTP status $TAG_STATUS"
+
+          if [ "$TAG_STATUS" = "200" ] && [ "$FORCE" != "true" ]; then
+            echo "Release $TARGET_TAG already exists in ${{ github.repository }}. Skipping build."
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Triggering build for $TARGET_TAG (Force: $FORCE)"
+            CLEAN_VERSION="${TARGET_TAG#v}"
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            echo "tag=$TARGET_TAG" >> "$GITHUB_OUTPUT"
+            echo "version=$CLEAN_VERSION" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: Build (${{ matrix.name }})
+    needs: check
+    if: needs.check.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: arm64
+            goarch: arm64
+            openwrt_arch: aarch64_cortex-a53
+          - name: amd64
+            goarch: amd64
+            openwrt_arch: x86_64
+          - name: mipsle-softfloat
+            goarch: mipsle
+            gomips: softfloat
+            openwrt_arch: mipsel_24kc
+          - name: mips-softfloat
+            goarch: mips
+            gomips: softfloat
+            openwrt_arch: mips_24kc
+          - name: armv7
+            goarch: arm
+            goarm: 7
+            openwrt_arch: arm_cortex-a7
+    steps:
+      - name: Checkout Upstream sing-box-extended
+        uses: actions/checkout@v4
+        with:
+          repository: shtorm-7/sing-box-extended
+          ref: ${{ needs.check.outputs.tag }}
+          fetch-depth: 1
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.8'
+          cache: false
+
+      - name: Install UPX
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends upx
+
+      - name: Compile and Package
+        run: |
+          set -xeuo pipefail
+
+          export GOOS=linux
+          export GOARCH=${{ matrix.goarch }}
+          [ -n "${{ matrix.gomips }}" ] && export GOMIPS="${{ matrix.gomips }}"
+          [ -n "${{ matrix.goarm }}" ] && export GOARM="${{ matrix.goarm }}"
+          export CGO_ENABLED=0
+
+          # Build tags: router essentials only, no heavy bloat
+          BUILD_TAGS="with_quic,with_dhcp,with_wireguard,with_utls,with_clash_api,badlinkname,tfogo_checklinkname0"
+
+          # Shared ldflags for size optimization
+          LDFLAGS="-X 'github.com/sagernet/sing-box/constant.Version=${{ needs.check.outputs.version }}' -X runtime.godebugDefault=multipathtcp=0,tlssha1=1 -checklinkname=0 -s -w -buildid="
+
+          echo "Compiling uncompressed binary for ${{ matrix.name }}..."
+          go build -v -trimpath -tags "${BUILD_TAGS}" -ldflags "${LDFLAGS}" -o sing-box ./cmd/sing-box
+
+          ls -lh sing-box
+          file sing-box || true
+
+          # Create uncompressed archives (standard & latest alias)
+          TAR_VER="sing-box-extended-lite-${{ needs.check.outputs.version }}-linux-${{ matrix.name }}.tar.gz"
+          TAR_LATEST="sing-box-extended-lite-linux-${{ matrix.name }}.tar.gz"
+
+          tar -czf "${TAR_VER}" sing-box
+          cp "${TAR_VER}" "${TAR_LATEST}"
+
+          # Create UPX compressed binary & archives
+          mkdir -p compressed
+          cp sing-box compressed/sing-box
+          if upx --lzma compressed/sing-box || upx -9 compressed/sing-box; then
+            echo "UPX compression succeeded for ${{ matrix.name }}:"
+            ls -lh compressed/sing-box
+            TAR_CMP_VER="sing-box-extended-lite-${{ needs.check.outputs.version }}-linux-${{ matrix.name }}-compressed.tar.gz"
+            TAR_CMP_LATEST="sing-box-extended-lite-linux-${{ matrix.name }}-compressed.tar.gz"
+            tar -czf "${TAR_CMP_VER}" -C compressed sing-box
+            cp "${TAR_CMP_VER}" "${TAR_CMP_LATEST}"
+          else
+            echo "UPX compression skipped or failed for ${{ matrix.name }}"
+          fi
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.name }}
+          path: sing-box-extended-lite-*.tar.gz
+          retention-days: 1
+
+  release:
+    name: Publish GitHub Release
+    needs: [check, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download Built Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: binaries-*
+          merge-multiple: true
+          path: dist
+
+      - name: Generate Checksums
+        run: |
+          cd dist
+          sha256sum sing-box-extended-lite-*.tar.gz > sha256sums.txt
+          cat sha256sums.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.check.outputs.tag }}
+          name: sing-box-extended-lite ${{ needs.check.outputs.tag }}
+          draft: false
+          prerelease: false
+          generate_release_notes: false
+          body: |
+            ## sing-box-extended-lite ${{ needs.check.outputs.tag }}
+
+            Lightweight, bloat-free OpenWrt router builds of [shtorm-7/sing-box-extended](https://github.com/shtorm-7/sing-box-extended) (${{ needs.check.outputs.tag }}).
+
+            ### Highlights
+            - **Compressed Variant (~9.5–12.5 MB)**: UPX-compressed for small flash routers (saves ~8–11 MB compared to upstream's 20.3 MB!).
+            - **Standard Variant (~46 MB ELF)**: Pure uncompressed binary for routers with ample flash/x86. Zero decompression overhead.
+            - **Kept (Router Essentials)**: VLESS Reality, TLS Fingerprinting (uTLS), XTLS Vision, WireGuard, QUIC (Hysteria 2 / TUIC), Clash API (Podkop / LuCI), RuleSet (`.srs`), TPROXY, TUN, DoH DNS.
+            - **Stripped (Heavy Bloat)**: WebRTC Call, Masque, Tailscale, Cloudflared, USBIP, OpenVPN, OpenConnect, gVisor, ACME, built-in admin web UI.
+
+            ### Quick 1-Command Install on OpenWrt
+            ```sh
+            sh <(curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh)
+            ```
+          files: |
+            dist/*

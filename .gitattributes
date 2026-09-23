@@ -1,0 +1,6 @@
+# Force LF line endings for shell scripts and workflows
+*.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.md text eol=lf
+LICENSE text eol=lf
