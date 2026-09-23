@@ -30,12 +30,16 @@ CYAN='\033[1;36m'
 NC='\033[0m'
 
 INSTALL_SUCCESS=0
+INSTALL_STARTED=0
 SERVICE_STOPPED=0
 WAS_SERVICE_RUNNING=0
 WAS_ZB_RUNNING=0
 HAD_BACKUP_BIN=0
 HAD_BACKUP_REAL=0
 HAD_BACKUP_CACHE=0
+DEST_BIN_TOUCHED=0
+REAL_BIN_TOUCHED=0
+CACHE_TOUCHED=0
 BACKUP_RESTORED=0
 
 cleanup() {
@@ -47,13 +51,16 @@ restore_backup() {
     [ "$BACKUP_RESTORED" = "1" ] && return 0
     BACKUP_RESTORED=1
 
+    # Never touch production files if installation hasn't started modifying them
+    [ "$INSTALL_STARTED" != "1" ] && return 0
+
     if [ "$HAD_BACKUP_BIN" = "1" ]; then
         if [ -f "$BACKUP_BIN" ]; then
             printf "${YELLOW}[*] Restoring previous binary from backup...${NC}\n"
             cp -f "$BACKUP_BIN" "$DEST_BIN" 2>/dev/null || true
             chmod +x "$DEST_BIN" 2>/dev/null || true
         fi
-    else
+    elif [ "$DEST_BIN_TOUCHED" = "1" ]; then
         rm -f "$DEST_BIN"
     fi
 
@@ -62,7 +69,7 @@ restore_backup() {
             cp -f "$BACKUP_REAL" "$REAL_BIN" 2>/dev/null || true
             chmod +x "$REAL_BIN" 2>/dev/null || true
         fi
-    else
+    elif [ "$REAL_BIN_TOUCHED" = "1" ]; then
         rm -f "$REAL_BIN"
     fi
 
@@ -70,7 +77,7 @@ restore_backup() {
         if [ -f "$BACKUP_CACHE" ]; then
             cp -f "$BACKUP_CACHE" "$VERSION_CACHE" 2>/dev/null || true
         fi
-    else
+    elif [ "$CACHE_TOUCHED" = "1" ]; then
         rm -f "$VERSION_CACHE"
     fi
 
@@ -85,6 +92,17 @@ fail() {
     exit 1
 }
 
+on_signal() {
+    trap - INT TERM EXIT
+    if [ "$INSTALL_STARTED" = "1" ]; then
+        fail "Installation aborted by signal."
+    else
+        printf "\n${YELLOW}[*] Installation cancelled by user.${NC}\n"
+        cleanup
+        exit 130
+    fi
+}
+
 on_exit() {
     exit_code=$?
     cleanup
@@ -95,7 +113,7 @@ on_exit() {
 }
 
 trap on_exit EXIT
-trap 'fail "Installation aborted by signal"' INT TERM
+trap on_signal INT TERM
 
 # Early help handler
 for arg in "$@"; do
@@ -449,6 +467,7 @@ restart_services() {
     sleep 2
 }
 
+INSTALL_STARTED=1
 stop_services
 
 # Backup existing binaries and cache
@@ -477,9 +496,11 @@ if [ "$WANT_COMPRESSED" = "1" ]; then
         fail "Installed sing-box failed binary validation."
     fi
 
+    REAL_BIN_TOUCHED=1
     mv -f "$STAGE_REAL" "$REAL_BIN"
 
     # Populate version cache only after confirmed validation
+    CACHE_TOUCHED=1
     printf "%s\n" "$VALIDATION_BANNER" > "$VERSION_CACHE"
     chmod 644 "$VERSION_CACHE" 2>/dev/null || true
 
@@ -498,6 +519,7 @@ fi
 exec "$REAL_BIN" "$@"
 EOF
     chmod +x "$STAGE_BIN"
+    DEST_BIN_TOUCHED=1
     mv -f "$STAGE_BIN" "$DEST_BIN"
 else
     # Normal uncompressed variant: direct ELF, no wrapper
@@ -510,6 +532,7 @@ else
         fail "Installed sing-box failed binary validation."
     fi
 
+    DEST_BIN_TOUCHED=1
     mv -f "$STAGE_BIN" "$DEST_BIN"
     rm -f "$REAL_BIN" "$VERSION_CACHE"
 fi
