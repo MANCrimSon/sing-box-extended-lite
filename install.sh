@@ -33,6 +33,10 @@ INSTALL_SUCCESS=0
 SERVICE_STOPPED=0
 WAS_SERVICE_RUNNING=0
 WAS_ZB_RUNNING=0
+HAD_BACKUP_BIN=0
+HAD_BACKUP_REAL=0
+HAD_BACKUP_CACHE=0
+BACKUP_RESTORED=0
 
 cleanup() {
     rm -rf "$WORK_DIR"
@@ -40,24 +44,36 @@ cleanup() {
 }
 
 restore_backup() {
-    if [ -f "$BACKUP_BIN" ]; then
-        printf "${YELLOW}[*] Restoring previous binary from backup...${NC}\n"
-        cp -f "$BACKUP_BIN" "$DEST_BIN" 2>/dev/null || true
-        chmod +x "$DEST_BIN" 2>/dev/null || true
+    [ "$BACKUP_RESTORED" = "1" ] && return 0
+    BACKUP_RESTORED=1
+
+    if [ "$HAD_BACKUP_BIN" = "1" ]; then
+        if [ -f "$BACKUP_BIN" ]; then
+            printf "${YELLOW}[*] Restoring previous binary from backup...${NC}\n"
+            cp -f "$BACKUP_BIN" "$DEST_BIN" 2>/dev/null || true
+            chmod +x "$DEST_BIN" 2>/dev/null || true
+        fi
     else
         rm -f "$DEST_BIN"
     fi
-    if [ -f "$BACKUP_REAL" ]; then
-        cp -f "$BACKUP_REAL" "$REAL_BIN" 2>/dev/null || true
-        chmod +x "$REAL_BIN" 2>/dev/null || true
+
+    if [ "$HAD_BACKUP_REAL" = "1" ]; then
+        if [ -f "$BACKUP_REAL" ]; then
+            cp -f "$BACKUP_REAL" "$REAL_BIN" 2>/dev/null || true
+            chmod +x "$REAL_BIN" 2>/dev/null || true
+        fi
     else
         rm -f "$REAL_BIN"
     fi
-    if [ -f "$BACKUP_CACHE" ]; then
-        cp -f "$BACKUP_CACHE" "$VERSION_CACHE" 2>/dev/null || true
+
+    if [ "$HAD_BACKUP_CACHE" = "1" ]; then
+        if [ -f "$BACKUP_CACHE" ]; then
+            cp -f "$BACKUP_CACHE" "$VERSION_CACHE" 2>/dev/null || true
+        fi
     else
         rm -f "$VERSION_CACHE"
     fi
+
     rm -f "$BACKUP_BIN" "$BACKUP_REAL" "$BACKUP_CACHE"
 }
 
@@ -438,16 +454,16 @@ stop_services
 # Backup existing binaries and cache
 if [ -f "$DEST_BIN" ]; then
     cp -f "$DEST_BIN" "$BACKUP_BIN"
+    HAD_BACKUP_BIN=1
 fi
 if [ -f "$REAL_BIN" ]; then
     cp -f "$REAL_BIN" "$BACKUP_REAL"
+    HAD_BACKUP_REAL=1
 fi
 if [ -f "$VERSION_CACHE" ]; then
     cp -f "$VERSION_CACHE" "$BACKUP_CACHE"
+    HAD_BACKUP_CACHE=1
 fi
-
-STAGE_BIN="/usr/bin/.sing-box.tmp.$$"
-STAGE_REAL="/usr/libexec/.sing-box-core.tmp.$$"
 
 if [ "$WANT_COMPRESSED" = "1" ]; then
     # Compressed variant: install to REAL_BIN atomically and install smart version-cache wrapper
