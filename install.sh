@@ -14,6 +14,7 @@ VERSION_CACHE="${VERSION_CACHE:-/etc/sing-box-version.cache}"
 BACKUP_BIN="${BACKUP_BIN:-/tmp/sing-box.bak}"
 BACKUP_REAL="${BACKUP_REAL:-/tmp/sing-box-core.bak}"
 BACKUP_CACHE="${BACKUP_CACHE:-/tmp/sing-box-cache.bak}"
+USER_WORK_DIR="${WORK_DIR:-}"
 WORK_DIR="${WORK_DIR:-/tmp/sing-box-install}"
 PROXY_PREFIX="https://ghproxy.net/"
 RELEASE_FILE="${RELEASE_FILE:-/etc/openwrt_release}"
@@ -41,8 +42,19 @@ DEST_BIN_TOUCHED=0
 REAL_BIN_TOUCHED=0
 CACHE_TOUCHED=0
 BACKUP_RESTORED=0
+DNS_RESTORE=0
+
+restore_dns() {
+    [ "$DNS_RESTORE" != "1" ] && return 0
+    DNS_RESTORE=0
+    if command -v uci >/dev/null 2>&1; then
+        uci revert dhcp >/dev/null 2>&1 || true
+        /etc/init.d/dnsmasq restart >/dev/null 2>&1 || true
+    fi
+}
 
 cleanup() {
+    restore_dns
     rm -rf "$WORK_DIR"
     rm -f "$STAGE_BIN" "$STAGE_REAL"
 }
@@ -450,13 +462,26 @@ fi
 sync
 echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true
 
-# Check free space in /tmp (65 MB for normal, 25 MB for compressed)
+# Determine workspace directory based on available capacity (prefer RAM /tmp, fallback to disk /root)
 REQ_TMP_KB=65000
 [ "$WANT_COMPRESSED" = "1" ] && REQ_TMP_KB=25000
 
-TMP_FREE_KB=$(df -Pk /tmp 2>/dev/null | awk 'NR==2 {print $4}' | tr -cd '0-9')
-if [ -n "$TMP_FREE_KB" ] && [ "$TMP_FREE_KB" -lt "$REQ_TMP_KB" ]; then
-    fail "Insufficient free space in /tmp (${TMP_FREE_KB} KB available, ${REQ_TMP_KB} KB required)."
+if [ -z "$USER_WORK_DIR" ]; then
+    TMP_FREE_KB=$(df -Pk /tmp 2>/dev/null | awk 'NR==2 {print $4}' | tr -cd '0-9')
+    [ -z "$TMP_FREE_KB" ] && TMP_FREE_KB=0
+
+    if [ "$TMP_FREE_KB" -ge "$REQ_TMP_KB" ]; then
+        WORK_DIR="/tmp/sing-box-install"
+    else
+        ROOT_FREE_KB=$(df -Pk /root 2>/dev/null | awk 'NR==2 {print $4}' | tr -cd '0-9')
+        [ -z "$ROOT_FREE_KB" ] && ROOT_FREE_KB=0
+        if [ "$ROOT_FREE_KB" -ge "$REQ_TMP_KB" ]; then
+            WORK_DIR="/root/.sing-box-install"
+            printf "${YELLOW}[*] Low RAM in /tmp (%d MB free). Using storage /root for extraction...${NC}\n" "$(( TMP_FREE_KB / 1024 ))"
+        else
+            fail "Insufficient free space for installation. Available: /tmp=${TMP_FREE_KB} KB, /root=${ROOT_FREE_KB} KB (Required: ${REQ_TMP_KB} KB)."
+        fi
+    fi
 fi
 
 cleanup
@@ -464,20 +489,43 @@ mkdir -p "$WORK_DIR"
 cd "$WORK_DIR"
 
 printf "${CYAN}[*] Downloading %s...${NC}\n" "$FILE_NAME"
-if ! $DOWNLOAD "$FILE_NAME" "$DOWNLOAD_URL"; then
+DOWNLOAD_SUCCESS=0
+
+if $DOWNLOAD "$FILE_NAME" "$DOWNLOAD_URL"; then
+    DOWNLOAD_SUCCESS=1
+else
     printf "${YELLOW}[!] Direct download failed. Trying mirror (ghproxy)...${NC}\n"
-    if ! $DOWNLOAD "$FILE_NAME" "${PROXY_PREFIX}${DOWNLOAD_URL}"; then
-        fail "Failed to download $FILE_NAME."
+    if $DOWNLOAD "$FILE_NAME" "${PROXY_PREFIX}${DOWNLOAD_URL}"; then
+        DOWNLOAD_SUCCESS=1
     fi
 fi
 
-if [ ! -s "$FILE_NAME" ]; then
-    fail "Downloaded archive is empty."
+# If download failed, test if DNS resolution is blocked by dead sing-box with noresolv=1
+if [ "$DOWNLOAD_SUCCESS" != "1" ] && [ "$DNS_RESTORE" = "0" ] && command -v uci >/dev/null 2>&1; then
+    _noresolv=$(uci get dhcp.@dnsmasq[0].noresolv 2>/dev/null || echo "0")
+    if [ "$_noresolv" = "1" ]; then
+        printf "${YELLOW}[!] DNS resolution failed. Temporarily falling back to provider DNS...${NC}\n"
+        uci set dhcp.@dnsmasq[0].noresolv='0' 2>/dev/null || true
+        /etc/init.d/dnsmasq restart >/dev/null 2>&1 || true
+        DNS_RESTORE=1
+        sleep 2
+
+        printf "${CYAN}[*] Retrying download with fallback DNS...${NC}\n"
+        if $DOWNLOAD "$FILE_NAME" "$DOWNLOAD_URL"; then
+            DOWNLOAD_SUCCESS=1
+        elif $DOWNLOAD "$FILE_NAME" "${PROXY_PREFIX}${DOWNLOAD_URL}"; then
+            DOWNLOAD_SUCCESS=1
+        fi
+    fi
 fi
+
+[ "$DOWNLOAD_SUCCESS" != "1" ] && fail "Failed to download $FILE_NAME."
+[ ! -s "$FILE_NAME" ] && fail "Downloaded archive is empty."
 
 printf "${CYAN}[*] Extracting archive...${NC}\n"
 tar -xzf "$FILE_NAME" || fail "Failed to extract archive."
 rm -f "$FILE_NAME"
+restore_dns
 
 EXTRACTED_BIN=$(find "$WORK_DIR" -type f -name "sing-box" | head -n 1)
 if [ -z "$EXTRACTED_BIN" ]; then
@@ -644,4 +692,6 @@ printf "  Binary Size:    ${GREEN}%s${NC} (%s)\n" "${BIN_SIZE_MB:-n/a}" "$VARIAN
 printf "  Free Flash:     ${GREEN}%s${NC}\n" "$FLASH_FREE_DISP"
 printf "  Free RAM:       ${GREEN}%s${NC}\n" "$RAM_FREE_DISP"
 printf "  Service Status: ${SERVICE_STATUS_COLOR}%s${NC}\n" "$SERVICE_STATUS"
+printf "  Note:           ${YELLOW}Active runtime updated. In LuCI (System -> Software) old${NC}\n"
+printf "                  ${YELLOW}opkg label remains by design. Check core: sing-box version${NC}\n"
 printf "${CYAN}====================================================${NC}\n\n"

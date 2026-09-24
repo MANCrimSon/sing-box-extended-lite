@@ -42,7 +42,7 @@ sh <(curl -fsSL https://raw.githubusercontent.com/MANCrimSon/sing-box-extended-l
 Standard upstream compiles heavy enterprise/desktop services into a single monolithic binary (>95 MB). We stripped non-router deadweight to save flash and RAM:
 
 ### ✅ Kept (Router & VPN Core)
-- **VLESS Reality + XTLS Vision** (`with_utls`): Full TLS 1.3 masquerading (`gateway.icloud.com`) and ClientHello fingerprinting.
+- **VLESS Reality + XTLS Vision** (`with_utls`): Full TLS 1.3 SNI masquerading and ClientHello fingerprinting.
 - **QUIC Transports** (`with_quic`): Hysteria 2 and TUIC v5.
 - **WireGuard** (`with_wireguard`): Kernel & Go WireGuard / AmneziaWG support.
 - **Clash API** (`with_clash_api`): External controller for LuCI, Podkop, MetaCubeX, and YACD.
