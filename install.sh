@@ -183,13 +183,14 @@ else
     fail "Neither curl, wget, nor uclient-fetch was found."
 fi
 
-# Detect managed services
+# Detect managed services (Podkop, forks, HomeProxy, PassWall, sing-box)
 SERVICE_NAME=""
-if [ -f "$INIT_DIR/podkop" ]; then
-    SERVICE_NAME="podkop"
-elif [ -f "$INIT_DIR/sing-box" ]; then
-    SERVICE_NAME="sing-box"
-fi
+for s in podkop forkop netshift podkop-plus homeproxy passwall sing-box-ui sing-box; do
+    if [ -f "$INIT_DIR/$s" ]; then
+        SERVICE_NAME="$s"
+        break
+    fi
+done
 
 ZB_SERVICE=""
 if [ -f "$INIT_DIR/zeroblock" ]; then

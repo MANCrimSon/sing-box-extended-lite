@@ -4,7 +4,9 @@
 [![GitHub Release](https://img.shields.io/github/v/release/MANCrimSon/sing-box-extended-lite?style=flat&color=3388ff)](https://github.com/MANCrimSon/sing-box-extended-lite/releases/latest)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 
-Lightweight, bloat-free OpenWrt builds of [shtorm-7/sing-box-extended](https://github.com/shtorm-7/sing-box-extended), automatically updated and compiled with every new upstream release. Tailored specifically for home routers running Podkop, Zero-Block, or custom transparent proxies.
+Lightweight, bloat-free builds of [shtorm-7/sing-box-extended](https://github.com/shtorm-7/sing-box-extended), automatically updated and compiled with every new upstream release. 
+
+Optimized for OpenWrt routers and embedded Linux devices running **Podkop**, **Forkop (Podkop+)**, **NetShift**, **HomeProxy**, **Passwall**, **Zero-Block**, or standalone transparent proxy configurations. Standard Linux ELF binaries are also fully compatible with Keenetic (Entware) and standard Linux distributions.
 
 ---
 
