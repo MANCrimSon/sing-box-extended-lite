@@ -11,9 +11,10 @@ REPO="MANCrimSon/sing-box-extended-lite"
 DEST_BIN="${DEST_BIN:-/usr/bin/sing-box}"
 REAL_BIN="${REAL_BIN:-/usr/libexec/sing-box-core}"
 VERSION_CACHE="${VERSION_CACHE:-/etc/sing-box-version.cache}"
-BACKUP_BIN="${BACKUP_BIN:-/tmp/sing-box.bak}"
-BACKUP_REAL="${BACKUP_REAL:-/tmp/sing-box-core.bak}"
+BACKUP_BIN="${BACKUP_BIN:-/tmp/sing-box.bak.gz}"
+BACKUP_REAL="${BACKUP_REAL:-/tmp/sing-box-core.bak.gz}"
 BACKUP_CACHE="${BACKUP_CACHE:-/tmp/sing-box-cache.bak}"
+AUTO_ROLLBACK="${AUTO_ROLLBACK:-1}"
 USER_WORK_DIR="${WORK_DIR:-}"
 WORK_DIR="${WORK_DIR:-/tmp/sing-box-install}"
 PROXY_PREFIX="https://ghproxy.net/"
@@ -66,21 +67,26 @@ restore_backup() {
     # Never touch production files if installation hasn't started modifying them
     [ "$INSTALL_STARTED" != "1" ] && return 0
 
-    if [ "$HAD_BACKUP_BIN" = "1" ]; then
-        if [ -f "$BACKUP_BIN" ]; then
-            printf "${YELLOW}[*] Restoring previous binary from backup...${NC}\n"
-            cp -f "$BACKUP_BIN" "$DEST_BIN" 2>/dev/null || true
-            chmod +x "$DEST_BIN" 2>/dev/null || true
-        fi
+    if [ "$HAD_BACKUP_BIN" = "1" ] && [ -f "$BACKUP_BIN" ]; then
+        printf "${YELLOW}[*] Restoring previous binary from compressed backup...${NC}\n"
+        gzip -dc "$BACKUP_BIN" > "$DEST_BIN" 2>/dev/null || true
+        chmod +x "$DEST_BIN" 2>/dev/null || true
+    elif [ "$HAD_BACKUP_BIN" = "2" ] && [ -f "${BACKUP_BIN%.gz}" ]; then
+        printf "${YELLOW}[*] Restoring previous binary from backup...${NC}\n"
+        cp -f "${BACKUP_BIN%.gz}" "$DEST_BIN" 2>/dev/null || true
+        chmod +x "$DEST_BIN" 2>/dev/null || true
     elif [ "$DEST_BIN_TOUCHED" = "1" ]; then
         rm -f "$DEST_BIN"
     fi
 
-    if [ "$HAD_BACKUP_REAL" = "1" ]; then
-        if [ -f "$BACKUP_REAL" ]; then
-            cp -f "$BACKUP_REAL" "$REAL_BIN" 2>/dev/null || true
-            chmod +x "$REAL_BIN" 2>/dev/null || true
-        fi
+    if [ "$HAD_BACKUP_REAL" = "1" ] && [ -f "$BACKUP_REAL" ]; then
+        printf "${YELLOW}[*] Restoring previous core binary from compressed backup...${NC}\n"
+        gzip -dc "$BACKUP_REAL" > "$REAL_BIN" 2>/dev/null || true
+        chmod +x "$REAL_BIN" 2>/dev/null || true
+    elif [ "$HAD_BACKUP_REAL" = "2" ] && [ -f "${BACKUP_REAL%.gz}" ]; then
+        printf "${YELLOW}[*] Restoring previous core binary from backup...${NC}\n"
+        cp -f "${BACKUP_REAL%.gz}" "$REAL_BIN" 2>/dev/null || true
+        chmod +x "$REAL_BIN" 2>/dev/null || true
     elif [ "$REAL_BIN_TOUCHED" = "1" ]; then
         rm -f "$REAL_BIN"
     fi
@@ -93,7 +99,7 @@ restore_backup() {
         rm -f "$VERSION_CACHE"
     fi
 
-    rm -f "$BACKUP_BIN" "$BACKUP_REAL" "$BACKUP_CACHE"
+    rm -f "$BACKUP_BIN" "${BACKUP_BIN%.gz}" "$BACKUP_REAL" "${BACKUP_REAL%.gz}" "$BACKUP_CACHE"
 }
 
 fail() {
@@ -135,12 +141,13 @@ for arg in "$@"; do
             printf "Options:\n"
             printf "  -n, --normal       Install uncompressed Pure ELF (~46 MB)\n"
             printf "  -c, --compressed   Install UPX Lite compressed (~10 MB)\n"
+            printf "  --no-rollback      Disable automatic rollback on daemon startup failure\n"
             printf "  -h, --help         Show this help message\n\n"
             printf "Examples:\n"
             printf "  %s                 Interactive / auto-detection\n" "$0"
             printf "  %s --normal        Force normal build\n" "$0"
             printf "  %s --compressed    Force compressed build\n" "$0"
-            printf "  %s v1.12.1         Install specific version\n" "$0"
+            printf "  %s v1.14.3-extended-2.7.3  Install specific version\n" "$0"
             exit 0
             ;;
     esac
@@ -335,6 +342,9 @@ for arg in "$@"; do
             WANT_COMPRESSED="0"
             CLI_EXPLICIT=1
             ;;
+        --no-rollback)
+            AUTO_ROLLBACK="0"
+            ;;
         v*|[0-9]*.*)
             REQ_TAG="$arg"
             ;;
@@ -464,8 +474,9 @@ sync
 echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true
 
 # Determine workspace directory based on available capacity (prefer RAM /tmp, fallback to disk /root)
-REQ_TMP_KB=65000
-[ "$WANT_COMPRESSED" = "1" ] && REQ_TMP_KB=25000
+# With streaming extraction and compressed backups, temporary space requirements are minimized:
+REQ_TMP_KB=35000
+[ "$WANT_COMPRESSED" = "1" ] && REQ_TMP_KB=18000
 
 if [ -z "$USER_WORK_DIR" ]; then
     TMP_FREE_KB=$(df -Pk /tmp 2>/dev/null | awk 'NR==2 {print $4}' | tr -cd '0-9')
@@ -524,13 +535,34 @@ fi
 [ ! -s "$FILE_NAME" ] && fail "Downloaded archive is empty."
 
 printf "${CYAN}[*] Extracting archive...${NC}\n"
-tar -xzf "$FILE_NAME" || fail "Failed to extract archive."
-rm -f "$FILE_NAME"
 restore_dns
 
-EXTRACTED_BIN=$(find "$WORK_DIR" -type f -name "sing-box" | head -n 1)
-if [ -z "$EXTRACTED_BIN" ]; then
-    fail "Executable 'sing-box' not found in downloaded archive."
+# Detect binary member inside archive
+BINARY_MEMBER=$(tar -tzf "$FILE_NAME" 2>/dev/null | awk '/(^|\/)sing-box$/ {print; exit}')
+[ -z "$BINARY_MEMBER" ] && fail "Executable 'sing-box' not found in downloaded archive."
+
+TARGET_STAGE="$STAGE_BIN"
+[ "$WANT_COMPRESSED" = "1" ] && TARGET_STAGE="$STAGE_REAL"
+mkdir -p "$(dirname "$TARGET_STAGE")"
+
+# Stream extraction directly to target staging path (avoids duplicating files in RAM/disk)
+if tar -xOzf "$FILE_NAME" "$BINARY_MEMBER" > "$TARGET_STAGE" 2>/dev/null && [ -s "$TARGET_STAGE" ]; then
+    chmod +x "$TARGET_STAGE"
+else
+    # Fallback to standard disk extraction if streaming tar fails
+    rm -f "$TARGET_STAGE"
+    tar -xzf "$FILE_NAME" || fail "Failed to extract archive."
+    EXTRACTED_BIN=$(find "$WORK_DIR" -type f -name "sing-box" | head -n 1)
+    [ -z "$EXTRACTED_BIN" ] && fail "Executable 'sing-box' not found in downloaded archive."
+    cp -f "$EXTRACTED_BIN" "$TARGET_STAGE" || fail "Failed to copy extracted binary to staging path."
+    chmod +x "$TARGET_STAGE"
+fi
+rm -f "$FILE_NAME"
+
+# Strict execution validation BEFORE stopping services or touching production files
+VALIDATION_BANNER=$("$TARGET_STAGE" version 2>/dev/null) || fail "Downloaded sing-box binary failed execution test."
+if [ -z "$VALIDATION_BANNER" ] || ! echo "$VALIDATION_BANNER" | grep -qi "sing-box"; then
+    fail "Downloaded sing-box binary failed binary validation."
 fi
 
 stop_services() {
@@ -567,14 +599,22 @@ restart_services() {
 INSTALL_STARTED=1
 stop_services
 
-# Backup existing binaries and cache
+# Backup existing binaries and cache using gzip compression to preserve RAM
 if [ -f "$DEST_BIN" ]; then
-    cp -f "$DEST_BIN" "$BACKUP_BIN"
-    HAD_BACKUP_BIN=1
+    if gzip -c "$DEST_BIN" > "$BACKUP_BIN" 2>/dev/null && gzip -t "$BACKUP_BIN" 2>/dev/null; then
+        HAD_BACKUP_BIN=1
+    else
+        cp -f "$DEST_BIN" "${BACKUP_BIN%.gz}"
+        HAD_BACKUP_BIN=2
+    fi
 fi
 if [ -f "$REAL_BIN" ]; then
-    cp -f "$REAL_BIN" "$BACKUP_REAL"
-    HAD_BACKUP_REAL=1
+    if gzip -c "$REAL_BIN" > "$BACKUP_REAL" 2>/dev/null && gzip -t "$BACKUP_REAL" 2>/dev/null; then
+        HAD_BACKUP_REAL=1
+    else
+        cp -f "$REAL_BIN" "${BACKUP_REAL%.gz}"
+        HAD_BACKUP_REAL=2
+    fi
 fi
 if [ -f "$VERSION_CACHE" ]; then
     cp -f "$VERSION_CACHE" "$BACKUP_CACHE"
@@ -582,17 +622,7 @@ if [ -f "$VERSION_CACHE" ]; then
 fi
 
 if [ "$WANT_COMPRESSED" = "1" ]; then
-    # Compressed variant: install to REAL_BIN atomically and install smart version-cache wrapper
-    mkdir -p "$(dirname "$REAL_BIN")"
-    cp -f "$EXTRACTED_BIN" "$STAGE_REAL"
-    chmod +x "$STAGE_REAL"
-
-    # Strict execution validation BEFORE moving into production paths
-    VALIDATION_BANNER=$("$STAGE_REAL" version 2>/dev/null) || fail "Installed sing-box failed execution test."
-    if [ -z "$VALIDATION_BANNER" ] || ! echo "$VALIDATION_BANNER" | grep -qi "sing-box"; then
-        fail "Installed sing-box failed binary validation."
-    fi
-
+    # Compressed variant: atomic swap to REAL_BIN and install smart version-cache wrapper
     REAL_BIN_TOUCHED=1
     mv -f "$STAGE_REAL" "$REAL_BIN"
 
@@ -620,15 +650,6 @@ EOF
     mv -f "$STAGE_BIN" "$DEST_BIN"
 else
     # Normal uncompressed variant: direct ELF, no wrapper
-    cp -f "$EXTRACTED_BIN" "$STAGE_BIN"
-    chmod +x "$STAGE_BIN"
-
-    # Strict execution validation BEFORE moving into production paths
-    VALIDATION_BANNER=$("$STAGE_BIN" version 2>/dev/null) || fail "Installed sing-box failed execution test."
-    if [ -z "$VALIDATION_BANNER" ] || ! echo "$VALIDATION_BANNER" | grep -qi "sing-box"; then
-        fail "Installed sing-box failed binary validation."
-    fi
-
     DEST_BIN_TOUCHED=1
     mv -f "$STAGE_BIN" "$DEST_BIN"
     CACHE_TOUCHED=1
@@ -650,26 +671,68 @@ RAM_FREE_MB=$(get_ram_free_mb)
 [ -n "$RAM_FREE_MB" ] && RAM_FREE_DISP="${RAM_FREE_MB} MB" || RAM_FREE_DISP="n/a"
 
 restart_services
-INSTALL_SUCCESS=1
-cleanup
-rm -f "$BACKUP_BIN" "$BACKUP_REAL" "$BACKUP_CACHE"
-sync
 
-# Health-check daemon state after service restart
+# Health-check daemon state after service restart with automated rollback
+PID_CHECK=""
 SERVICE_STATUS=""
 SERVICE_STATUS_COLOR="$NC"
-PID_CHECK=$(pidof sing-box sing-box-core 2>/dev/null || pidof sing-box 2>/dev/null || pidof sing-box-core 2>/dev/null || true)
-PID_CHECK=$(printf "%s" "$PID_CHECK" | tr -s ' ' | sed 's/^ //;s/ $//')
 
 if [ "$WAS_SERVICE_RUNNING" = "1" ] || [ "$WAS_ZB_RUNNING" = "1" ]; then
+    printf "${CYAN}[*] Verifying daemon health (waiting up to 10s)...${NC}\n"
+    _attempts=0
+    while [ "$_attempts" -lt 10 ]; do
+        PID_CHECK=$(pidof sing-box sing-box-core 2>/dev/null || pidof sing-box 2>/dev/null || pidof sing-box-core 2>/dev/null || true)
+        PID_CHECK=$(printf "%s" "$PID_CHECK" | tr -s ' ' | sed 's/^ //;s/ $//')
+        if [ -n "$PID_CHECK" ]; then
+            break
+        fi
+        sleep 1
+        _attempts=$(( _attempts + 1 ))
+    done
+
     if [ -n "$PID_CHECK" ]; then
         SERVICE_STATUS="Running (PID: ${PID_CHECK})"
         SERVICE_STATUS_COLOR="$GREEN"
     else
-        SERVICE_STATUS="Warning: stopped or failed to start (check 'logread -e sing-box')"
-        SERVICE_STATUS_COLOR="$YELLOW"
+        if [ "$AUTO_ROLLBACK" = "1" ]; then
+            printf "\n${RED}[!] Error: Daemon failed to stay running with new version after restart.${NC}\n"
+            printf "${YELLOW}[*] Likely configuration incompatibility. Initiating automatic rollback...${NC}\n"
+
+            # Stop failing service cleanly
+            [ -n "$SERVICE_NAME" ] && "$INIT_DIR/$SERVICE_NAME" stop >/dev/null 2>&1 || true
+            [ -n "$ZB_SERVICE" ] && "$INIT_DIR/$ZB_SERVICE" stop >/dev/null 2>&1 || true
+            killall sing-box >/dev/null 2>&1 || true
+            killall sing-box-core >/dev/null 2>&1 || true
+
+            restore_backup
+            restart_services
+
+            ROLLBACK_PID=$(pidof sing-box sing-box-core 2>/dev/null || pidof sing-box 2>/dev/null || true)
+            ROLLBACK_PID=$(printf "%s" "$ROLLBACK_PID" | tr -s ' ' | sed 's/^ //;s/ $//')
+            cleanup
+            sync
+
+            printf "\n${YELLOW}====================================================${NC}\n"
+            printf "${YELLOW}  AUTOMATIC ROLLBACK COMPLETED${NC}\n"
+            printf "${YELLOW}====================================================${NC}\n"
+            printf "  Restored:       ${GREEN}Previous working sing-box binary${NC}\n"
+            if [ -n "$ROLLBACK_PID" ]; then
+                printf "  Daemon Status:  ${GREEN}Running (PID: %s)${NC}\n" "$ROLLBACK_PID"
+            else
+                printf "  Daemon Status:  ${RED}Failed to restart (check 'logread -e sing-box')${NC}\n"
+            fi
+            printf "\n${CYAN}Hint: Check configuration compatibility before upgrading:${NC}\n"
+            printf "  sing-box check -c /etc/sing-box/config.json\n"
+            printf "  logread -e sing-box | tail -n 30\n\n"
+            exit 1
+        else
+            SERVICE_STATUS="Warning: stopped or failed to start (check 'logread -e sing-box')"
+            SERVICE_STATUS_COLOR="$YELLOW"
+        fi
     fi
 elif [ -n "$SERVICE_NAME" ] || [ -n "$ZB_SERVICE" ]; then
+    PID_CHECK=$(pidof sing-box sing-box-core 2>/dev/null || pidof sing-box 2>/dev/null || pidof sing-box-core 2>/dev/null || true)
+    PID_CHECK=$(printf "%s" "$PID_CHECK" | tr -s ' ' | sed 's/^ //;s/ $//')
     if [ -n "$PID_CHECK" ]; then
         SERVICE_STATUS="Running (PID: ${PID_CHECK})"
         SERVICE_STATUS_COLOR="$GREEN"
@@ -678,6 +741,8 @@ elif [ -n "$SERVICE_NAME" ] || [ -n "$ZB_SERVICE" ]; then
         SERVICE_STATUS_COLOR="$NC"
     fi
 else
+    PID_CHECK=$(pidof sing-box sing-box-core 2>/dev/null || pidof sing-box 2>/dev/null || pidof sing-box-core 2>/dev/null || true)
+    PID_CHECK=$(printf "%s" "$PID_CHECK" | tr -s ' ' | sed 's/^ //;s/ $//')
     if [ -n "$PID_CHECK" ]; then
         SERVICE_STATUS="Running (PID: ${PID_CHECK})"
         SERVICE_STATUS_COLOR="$GREEN"
@@ -686,6 +751,11 @@ else
         SERVICE_STATUS_COLOR="$NC"
     fi
 fi
+
+INSTALL_SUCCESS=1
+cleanup
+rm -f "$BACKUP_BIN" "${BACKUP_BIN%.gz}" "$BACKUP_REAL" "${BACKUP_REAL%.gz}" "$BACKUP_CACHE"
+sync
 
 printf "\n${GREEN}[+] Installation Successful!${NC}\n"
 printf "  Version:        ${YELLOW}%s${NC} -> ${GREEN}%s${NC}\n" "${CURRENT_VER:-n/a}" "$NEW_VER"

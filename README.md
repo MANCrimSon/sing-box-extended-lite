@@ -34,8 +34,18 @@ sh <(curl -fsSL https://raw.githubusercontent.com/MANCrimSon/sing-box-extended-l
 sh <(curl -fsSL https://raw.githubusercontent.com/MANCrimSon/sing-box-extended-lite/main/install.sh) --compressed
 
 # Install specific version
-sh <(curl -fsSL https://raw.githubusercontent.com/MANCrimSon/sing-box-extended-lite/main/install.sh) v1.14.1-extended-2.7.2
+sh <(curl -fsSL https://raw.githubusercontent.com/MANCrimSon/sing-box-extended-lite/main/install.sh) v1.14.3-extended-2.7.3
+
+# Disable automatic rollback (leave failing binary for manual inspection)
+sh <(curl -fsSL https://raw.githubusercontent.com/MANCrimSon/sing-box-extended-lite/main/install.sh) --no-rollback
 ```
+
+### 🛡️ Built-in Installer Safety & Resilience
+- **Streaming In-Place Extraction (`tar -xOzf`)**: Extracts the binary stream directly into the staging location on disk without unpacking giant archives into `/tmp`, slashing memory/disk requirements by over 50%.
+- **Gzip-Compressed Rollback Backup**: Compresses existing binaries into `sing-box.bak.gz` before replacement, reducing backup RAM footprint from ~45 MB to ~10 MB.
+- **Automated Rollback Protection**: After restarting managed services (`podkop`, `forkop`, `homeproxy`, `passwall`, `sing-box`), the installer monitors live daemon PID for up to 10 seconds. If the new binary crashes (e.g. due to configuration syntax changes in sing-box 1.14), it automatically restores the prior working binary and restarts the service, preventing proxy outages.
+- **Multi-Service Lifecycle Management**: Autodetects and cleanly stops/restarts managed daemons across 8 ecosystems (`podkop`, `forkop`, `netshift`, `podkop-plus`, `homeproxy`, `passwall`, `sing-box-ui`, `sing-box`, plus `zeroblock`).
+- **In-Memory DNS Bypass**: If GitHub API is unreachable through broken proxy rules (`noresolv=1`), temporarily routes DNS through provider servers in RAM and cleans up safely via `uci revert dhcp` without wearing out physical flash.
 
 ---
 
